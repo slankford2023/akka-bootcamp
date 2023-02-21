@@ -20,10 +20,10 @@ let main argv =
 
     let tailCoordinatorActor = spawnOpt myActorSystem "tailCoordinatorActor" (actorOf2 Actors.tailCoordinatorActor) [ SpawnOption.SupervisorStrategy(strategy ()) ]
     // pass tailCoordinatorActor to fileValidatorActorProps (just adding one extra arg)
-    let fileValidatorActor = spawn myActorSystem "fileValidatorActor" (actorOf2 (Actors.fileValidatorActor consoleWriterActor tailCoordinatorActor))
+    let fileValidatorActor = spawn myActorSystem "validationActor" (actorOf2 (Actors.fileValidatorActor consoleWriterActor))
     
     // reader actor
-    let consoleReaderActor = spawn myActorSystem "consoleReaderActor" (actorOf2 (Actors.consoleReaderActor fileValidatorActor))
+    let consoleReaderActor = spawn myActorSystem "consoleReaderActor" (actorOf2 (Actors.consoleReaderActor))
 
     // tell the consoleReader actor to begin
     consoleReaderActor <! Start

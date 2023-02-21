@@ -1,22 +1,17 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net6.0</TargetFramework>
   </PropertyGroup>
-
   <ItemGroup>
     <Compile Include="Actors.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
-
   <ItemGroup>
-    <PackageReference Include="Akka" Version="1.4.49" />
-    <PackageReference Include="Akka.FSharp" Version="1.4.49" />
+    <PackageReference Include="Akka" Version="1.4.46" />
+    <PackageReference Include="Akka.FSharp" Version="1.4.46" />
   </ItemGroup>
-
   <ItemGroup>
     <PackageReference Update="FSharp.Core" Version="6.0.3" />
   </ItemGroup>
-
 </Project>

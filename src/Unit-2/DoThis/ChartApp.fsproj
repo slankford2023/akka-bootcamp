@@ -14,14 +14,14 @@
     <Compile Include="Actors.fs" />
     <Compile Include="Form.fs" />
     <Compile Include="Program.fs" />
-    <None Include="akka-hocon.config">
+    <!-- <None Include="akka-hocon.config">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    </None> -->
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Akka" Version="1.4.34" />
-    <PackageReference Include="Akka.FSharp" Version="1.4.34" />
+    <PackageReference Include="Akka" Version="1.4.46" />
+    <PackageReference Include="Akka.FSharp" Version="1.4.46" />
     <PackageReference Include="HIC.System.Windows.Forms.DataVisualization" Version="1.0.1" />
   </ItemGroup>
 

@@ -30,8 +30,12 @@ module Form =
     form.ResumeLayout false
 
     let load (myActorSystem:ActorSystem) =
-        let chartActor = spawn myActorSystem "charting" (actorOf (Actors.chartingActor sysChart))
+        let chartActor = spawn myActorSystem "charting" (Actors.chartingActor sysChart)
         let series = ChartDataHelper.randomSeries "FakeSeries1" None None
         chartActor <! InitializeChart(Map.ofList [(series.Name, series)])
-        btnAddSeries.Click.Add (fun _ -> ())
+        btnAddSeries.Click.Add (fun _ -> 
+            let newSeriesName = sprintf "FakeSeries %i" (sysChart.Series.Count + 1)
+            let newSeries = ChartDataHelper.randomSeries newSeriesName None None
+            chartActor <! AddSeries newSeries
+        )
         form

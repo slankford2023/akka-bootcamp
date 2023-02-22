@@ -4,6 +4,7 @@ open System.Collections.Generic
 open System.Windows.Forms.DataVisualization.Charting
 open Akka.Actor
 open Akka.FSharp
+open System
 
 [<AutoOpen>]
 module Messages =
@@ -14,10 +15,21 @@ module Messages =
 /// Actors used to intialize chart data
 [<AutoOpen>]
 module Actors =
-    let chartingActor (chart: Chart) message =
-        match message with
-        | InitializeChart series ->
-            chart.Series.Clear ()
-            series |> Map.iter (fun k v ->
-                v.Name <- k
-                chart.Series.Add(v))
+    let chartingActor (chart : Chart) (mailbox : Actor<_>) =
+        let rec charting (mapping : Map<string, Series>) = actor {
+            let! message = mailbox.Receive ()
+
+            match message with
+            | InitializeChart series ->
+                chart.Series.Clear ()
+                series |> Map.iter (fun k v -> 
+                    v.Name <- k
+                    chart.Series.Add v)
+                return! charting series
+            | AddSeries series when not <| String.IsNullOrEmpty series.Name && not <| (mapping |> Map.containsKey series.Name) ->
+                let newMapping = mapping.Add (series.Name, series)
+                chart.Series.Add series
+                return! charting newMapping
+            //| _ -> mailbox.Unhandled message
+        }
+        charting Map.empty<string, Series>

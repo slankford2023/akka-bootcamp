@@ -7,8 +7,9 @@ open Akka.FSharp
 
 [<AutoOpen>]
 module Messages =
-    type InitializeChart =
+    type ChartMessage =
         | InitializeChart of initialSeries: Map<string, Series>
+        | AddSeries of series : Series
 
 /// Actors used to intialize chart data
 [<AutoOpen>]

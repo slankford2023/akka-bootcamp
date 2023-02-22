@@ -103,7 +103,11 @@ module Actors =
                 match message with
                 | TogglePause ->
                     setPauseButton false
+                    mailbox.UnstashAll ()
                     return! charting (mapping, numberOfPoints)
+
+                | AddSeries series -> mailbox.Stash ()
+                | RemoveSeries series -> mailbox.Stash()
 
                 | Metric (seriesName, counterValue) when not <| String.IsNullOrEmpty seriesName && mapping |> Map.containsKey seriesName ->
                     let newNoOfPts = numberOfPoints + 1

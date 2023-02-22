@@ -5,6 +5,7 @@ open System.Windows.Forms
 open System.Drawing
 open Akka.FSharp
 open Akka.Actor
+open Akka.Routing
 
 [<AutoOpen>]
 module Actors =
@@ -183,7 +184,6 @@ module Actors =
 
         processMessage ()
 
-    // TODO implement
     let githubWorkerActor (mailbox: Actor<_>) =
         
         let githubClient = lazy (GithubClientFactory.getClient ())
@@ -332,31 +332,55 @@ module Actors =
     let githubCommanderActor (mailbox: Actor<_>) =
 
         // pre-start
-        let coordinator = spawn mailbox.Context "coordinator" (githubCoordinatorActor)
+        let c1 = spawn mailbox.Context "coordinator1" (githubCoordinatorActor)
+        let c2 = spawn mailbox.Context "coordinator2" (githubCoordinatorActor)
+        let c3 = spawn mailbox.Context "coordinator3" (githubCoordinatorActor)
+
+        //create a broadcast router who will ask all of the coordinators if they are available for work
+        let coordinatorPaths = [| string c1.Path; string c2.Path; string c3.Path |]
+        let coordinator = mailbox.Context.ActorOf(Props.Empty.WithRouter(BroadcastGroup(coordinatorPaths)))
 
         // post-stop, kill off the old coordinator so we can recreate it from scratch
         mailbox.Defer (fun _ -> coordinator <! PoisonPill.Instance)
 
-        // pass around the actor that sent the CanAcceptJob message
-        let rec processMessage canAcceptJobSender = actor {
-            let! message = mailbox.Receive ()
-                
-            match message with
-            | CanAcceptJob repoKey ->
-                coordinator <! CanAcceptJob repoKey
-                return! processMessage mailbox.Context.Sender
-            | UnableToAcceptJob repoKey ->
-                canAcceptJobSender <! UnableToAcceptJob repoKey
-            | AbleToAcceptJob repoKey ->
-                canAcceptJobSender <! AbleToAcceptJob repoKey
-                coordinator <! BeginJob repoKey // start processing messages
-                mailbox.Context.ActorSelection "akka://GithubActors/user/mainform" <! LaunchRepoResultsWindow(repoKey, coordinator) // launch the new window to view results of the processing
-            | _ -> return! processMessage canAcceptJobSender
+        // pass around the actor that sent the CanAcceptJob message as well as the current number of pending jobs
+        let rec ready canAcceptJobSender pendingJobReplies =
+            actor {
+                let! message = mailbox.Receive ()
 
-            return! processMessage canAcceptJobSender
-        }
+                match message with
+                | CanAcceptJob repoKey ->
+                    coordinator <! CanAcceptJob repoKey
+                    return! asking mailbox.Context.Sender 3 // 3 pending job replies
+                | _ -> return! ready canAcceptJobSender pendingJobReplies
+            }
+        // pass around the actor that sent the CanAcceptJob message as well as the current number of pending jobs
+        and asking canAcceptJobSender pendingJobReplies =
+            actor {
+                let! message = mailbox.Receive ()
 
-        processMessage null
+                match message with
+                | CanAcceptJob repoKey ->
+                    mailbox.Stash ()
+                    return! asking canAcceptJobSender pendingJobReplies
+                | UnableToAcceptJob repoKey ->
+                    let currentPendingJobReplies = pendingJobReplies - 1
+                    if currentPendingJobReplies = 0 then
+                        canAcceptJobSender <! UnableToAcceptJob repoKey
+                        mailbox.UnstashAll ()
+                        return! ready canAcceptJobSender currentPendingJobReplies
+                    else
+                        return! asking canAcceptJobSender currentPendingJobReplies
+                | AbleToAcceptJob repoKey ->
+                    canAcceptJobSender <! AbleToAcceptJob repoKey
+                    mailbox.Context.Sender <! BeginJob repoKey // start processing messages
+                    mailbox.Context.ActorSelection "akka://GithubActors/user/mainform" <! LaunchRepoResultsWindow(repoKey, mailbox.Context.Sender) // launch the new window to view results of the processing
+                    mailbox.UnstashAll ()
+                    return! ready canAcceptJobSender pendingJobReplies
+                | _ -> return! asking canAcceptJobSender pendingJobReplies
+            }
+
+        ready null 0        
 
 
     let repoResultsActor (usersGrid: DataGridView) (statusLabel: ToolStripStatusLabel) (progressBar: ToolStripProgressBar) (mailbox: Actor<_>) =

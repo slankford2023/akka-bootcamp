@@ -8,7 +8,7 @@ open Akka.Configuration.Hocon
 open System.Configuration
 open ChartApp
 
-let chartActors = System.create "ChartActors" (Configuration.load ())
+let chartActors = System.create "ChartActors" (Configuration.load())
 
 Application.EnableVisualStyles ()
 Application.SetCompatibleTextRenderingDefault false

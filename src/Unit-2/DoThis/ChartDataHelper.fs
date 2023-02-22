@@ -4,13 +4,12 @@ open System.Windows.Forms.DataVisualization.Charting
 open Akka.Util
 
 [<AutoOpen>]
-// Helper class for creating random data for chart plots
+/// Helper class for creating random data for chart plots
 module ChartDataHelper =
     let randomSeries (seriesName: string) (seriesType: SeriesChartType option) (points: int option) =
         let seriesChartType = defaultArg seriesType SeriesChartType.Line
         let seriesPoints = defaultArg points 100
         let series = new Series(seriesName, ChartType = seriesChartType)
-
         [0..seriesPoints]
         |> List.iter (fun i ->
                 let rng = ThreadLocalRandom.Current.NextDouble ()

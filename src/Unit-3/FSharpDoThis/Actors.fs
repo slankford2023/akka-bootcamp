@@ -225,7 +225,7 @@ module Actors =
 
 
     let githubCoordinatorActor (mailbox: Actor<_>) =
-                  
+            
         let startWorking repoKey (scheduler: IScheduler) =
             {
                 ReceivedInitialUsers = false
@@ -237,7 +237,7 @@ module Actors =
             }      
 
         // pre-start
-        let githubWorker = spawn mailbox.Context "worker" (githubWorkerActor)
+        let githubWorker = spawnOpt mailbox.Context "worker" (githubWorkerActor) [ SpawnOption.Router(RoundRobinPool(10)) ]
 
         let rec waiting () =
             actor {

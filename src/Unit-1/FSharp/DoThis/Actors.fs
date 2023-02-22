@@ -75,6 +75,12 @@ module Actors =
         let text = fileStreamReader.ReadToEnd ()
         do mailbox.Self <! InitialRead(filePath, text)
 
+        // Ensure cleanup at end of actor lifecycle
+        mailbox.Defer <| fun () ->
+            (observer :> IDisposable).Dispose ()
+            (fileStreamReader :> IDisposable).Dispose ()
+            (fileStream :> IDisposable).Dispose ()
+
         let rec loop() = actor {
             let! message = mailbox.Receive()
             match (box message) :?> FileCommand with

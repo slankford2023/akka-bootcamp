@@ -1,5 +1,6 @@
 ﻿namespace GithubActors
 
+open System.Linq
 open System
 open System.Windows.Forms
 open System.Drawing
@@ -332,28 +333,24 @@ module Actors =
     let githubCommanderActor (mailbox: Actor<_>) =
 
         // pre-start
-        let c1 = spawn mailbox.Context "coordinator1" (githubCoordinatorActor)
-        let c2 = spawn mailbox.Context "coordinator2" (githubCoordinatorActor)
-        let c3 = spawn mailbox.Context "coordinator3" (githubCoordinatorActor)
-
-        //create a broadcast router who will ask all of the coordinators if they are available for work
-        let coordinatorPaths = [| string c1.Path; string c2.Path; string c3.Path |]
-        let coordinator = mailbox.Context.ActorOf(Props.Empty.WithRouter(BroadcastGroup(coordinatorPaths)))
+        let coordinator = spawnOpt mailbox.Context "coordinator" githubCoordinatorActor [ SpawnOption.Router(FromConfig.Instance) ]
 
         // post-stop, kill off the old coordinator so we can recreate it from scratch
         mailbox.Defer (fun _ -> coordinator <! PoisonPill.Instance)
 
         // pass around the actor that sent the CanAcceptJob message as well as the current number of pending jobs
         let rec ready canAcceptJobSender pendingJobReplies =
-            actor {
-                let! message = mailbox.Receive ()
+                actor {
+                    let! message = mailbox.Receive ()
 
-                match message with
-                | CanAcceptJob repoKey ->
-                    coordinator <! CanAcceptJob repoKey
-                    return! asking mailbox.Context.Sender 3 // 3 pending job replies
-                | _ -> return! ready canAcceptJobSender pendingJobReplies
-            }
+                    match message with
+                    | CanAcceptJob repoKey ->
+                        coordinator <! CanAcceptJob repoKey
+                        // Ask how many coordinator instances were created (i.e. how many pending job replies are expected)
+                        let routees: Routees = coordinator <? GetRoutees() |> Async.RunSynchronously
+                        return! asking mailbox.Context.Sender (routees.Members.Count ())
+                    | _ -> return! ready canAcceptJobSender pendingJobReplies
+                }
         // pass around the actor that sent the CanAcceptJob message as well as the current number of pending jobs
         and asking canAcceptJobSender pendingJobReplies =
             actor {

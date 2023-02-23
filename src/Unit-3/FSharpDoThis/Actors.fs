@@ -335,53 +335,75 @@ module Actors =
 
 
     let githubCommanderActor (mailbox: Actor<_>) =
-
+    
+        let timeout = Nullable(TimeSpan.FromSeconds 3.)
+        mailbox.Context.SetReceiveTimeout timeout
+        mailbox.Context.SetReceiveTimeout (Nullable())
+        
         // pre-start
         let coordinator = spawnOpt mailbox.Context "coordinator" githubCoordinatorActor [ SpawnOption.Router(FromConfig.Instance) ]
 
         // post-stop, kill off the old coordinator so we can recreate it from scratch
         mailbox.Defer (fun _ -> coordinator <! PoisonPill.Instance)
 
+        let mutable currentRepoKey: RepoKey = { Owner = ""; Repo = "" }
+
         // pass around the actor that sent the CanAcceptJob message as well as the current number of pending jobs
         let rec ready canAcceptJobSender pendingJobReplies =
-                actor {
-                    let! message = mailbox.Receive ()
+            actor {
+                let! message = mailbox.Receive ()
 
-                    match message with
+                match box message with
+                | :? GithubActorMessage as githubMessage ->
+                    match githubMessage with
                     | CanAcceptJob repoKey ->
                         coordinator <! CanAcceptJob repoKey
+                        currentRepoKey <- repoKey
                         // Ask how many coordinator instances were created (i.e. how many pending job replies are expected)
                         let routees: Routees = coordinator <? GetRoutees() |> Async.RunSynchronously
+
+                        mailbox.Context.SetReceiveTimeout (Nullable(TimeSpan.FromSeconds 3.))
                         return! asking mailbox.Context.Sender (routees.Members.Count ())
                     | _ -> return! ready canAcceptJobSender pendingJobReplies
-                }
+                | _ -> return! ready canAcceptJobSender pendingJobReplies
+            }
         // pass around the actor that sent the CanAcceptJob message as well as the current number of pending jobs
         and asking canAcceptJobSender pendingJobReplies =
             actor {
                 let! message = mailbox.Receive ()
 
-                match message with
-                | CanAcceptJob repoKey ->
-                    mailbox.Stash ()
-                    return! asking canAcceptJobSender pendingJobReplies
-                | UnableToAcceptJob repoKey ->
-                    let currentPendingJobReplies = pendingJobReplies - 1
-                    if currentPendingJobReplies = 0 then
-                        canAcceptJobSender <! UnableToAcceptJob repoKey
-                        mailbox.UnstashAll ()
-                        return! ready canAcceptJobSender currentPendingJobReplies
-                    else
-                        return! asking canAcceptJobSender currentPendingJobReplies
-                | AbleToAcceptJob repoKey ->
-                    canAcceptJobSender <! AbleToAcceptJob repoKey
-                    mailbox.Context.Sender <! BeginJob repoKey // start processing messages
-                    mailbox.Context.ActorSelection "akka://GithubActors/user/mainform" <! LaunchRepoResultsWindow(repoKey, mailbox.Context.Sender) // launch the new window to view results of the processing
+                match box message with
+                | :? ReceiveTimeout as timeout ->
+                    canAcceptJobSender <! UnableToAcceptJob currentRepoKey
                     mailbox.UnstashAll ()
+                    mailbox.Context.SetReceiveTimeout (Nullable())
                     return! ready canAcceptJobSender pendingJobReplies
+                | :? GithubActorMessage as githubMessage ->
+                    match githubMessage with
+                    | CanAcceptJob repoKey ->
+                        mailbox.Stash ()
+                        return! asking canAcceptJobSender pendingJobReplies
+                    | UnableToAcceptJob repoKey ->
+                        let currentPendingJobReplies = pendingJobReplies - 1
+                        if currentPendingJobReplies = 0 then
+                            canAcceptJobSender <! UnableToAcceptJob repoKey
+                            mailbox.UnstashAll ()
+                            mailbox.Context.SetReceiveTimeout (Nullable())
+                            return! ready canAcceptJobSender currentPendingJobReplies
+                        else
+                            return! asking canAcceptJobSender currentPendingJobReplies
+                    | AbleToAcceptJob repoKey ->
+                        canAcceptJobSender <! AbleToAcceptJob repoKey
+                        mailbox.Context.Sender <! BeginJob repoKey // start processing messages
+                        mailbox.Context.ActorSelection "akka://GithubActors/user/mainform" <! LaunchRepoResultsWindow(repoKey, mailbox.Context.Sender) // launch the new window to view results of the processing
+                        mailbox.UnstashAll ()
+                        mailbox.Context.SetReceiveTimeout (Nullable())
+                        return! ready canAcceptJobSender pendingJobReplies
+                    | _ -> return! asking canAcceptJobSender pendingJobReplies
                 | _ -> return! asking canAcceptJobSender pendingJobReplies
             }
 
-        ready null 0        
+        ready null 0         
 
 
     let repoResultsActor (usersGrid: DataGridView) (statusLabel: ToolStripStatusLabel) (progressBar: ToolStripProgressBar) (mailbox: Actor<_>) =

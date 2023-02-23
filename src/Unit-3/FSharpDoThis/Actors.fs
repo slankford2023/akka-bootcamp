@@ -196,26 +196,30 @@ module Actors =
             | RetryableQuery query when isQueryStarrer query.Query || isQueryStarrers query.Query ->
                 match query.Query :?> GithubActorMessage with
                 | QueryStarrer login ->
-                    try
-                        let starredRepos =
-                            githubClient.Value.Activity.Starring.GetAllForUser (login)
-                            |> Async.AwaitTask
-                            |> Async.RunSynchronously
+                    let sender = mailbox.Context.Sender // closure over the sender
 
-                        mailbox.Context.Sender <! StarredReposForUser(login, starredRepos)
-                    with
-                    | ex -> mailbox.Context.Sender <! nextTry query // operation failed - let the parent know
+                    // continuation that returns either a failure message (RetryableQuery) or a success message (StarredReposForUser)
+                    let continuation (task: System.Threading.Tasks.Task<Collections.Generic.IReadOnlyList<Octokit.Repository>>) : GithubActorMessage =
+                        if task.IsFaulted || task.IsCanceled then
+                            RetryableQuery(nextTry query) 
+                        else
+                            StarredReposForUser(login, task.Result)
+
+                    githubClient.Value.Activity.Starring.GetAllForUser(login).ContinueWith continuation
+                    |> Async.AwaitTask
+                    |!> sender
                 | QueryStarrers repoKey ->
-                    try
-                        let users =
-                            githubClient.Value.Activity.Starring.GetAllStargazers (repoKey.Owner, repoKey.Repo)
-                            |> Async.AwaitTask
-                            |> Async.RunSynchronously
-                            |> Seq.toArray
+                    let sender = mailbox.Context.Sender
 
-                        mailbox.Context.Sender <! UsersToQuery users
-                    with
-                    | ex -> mailbox.Context.Sender <! nextTry query // operation failed - let the parent know
+                    let continuation (task: System.Threading.Tasks.Task<Collections.Generic.IReadOnlyList<Octokit.User>>) : GithubActorMessage =
+                        if task.IsFaulted || task.IsCanceled then
+                            RetryableQuery(nextTry query) 
+                        else
+                            task.Result |> Seq.toArray |> UsersToQuery // returns the list of users
+
+                    githubClient.Value.Activity.Starring.GetAllStargazers(repoKey.Owner, repoKey.Repo).ContinueWith continuation
+                    |> Async.AwaitTask
+                    |!> sender
                 | _ -> () // never reached
             | _ -> ()
 
